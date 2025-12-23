@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>羽球 2026 雲端數據中心</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #f1f5f9; -webkit-tap-highlight-color: transparent; }
+        .glass { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(12px); border-radius: 2rem; border: 1px solid #e2e8f0; }
+        .modal { display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.95); align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+        .modal.active { display: flex; }
+        .avatar-pick { width: 60px; height: 60px; cursor: pointer; border-radius: 1rem; transition: 0.2s; background: #f8fafc; padding: 5px; }
+        .avatar-pick:hover { border: 3px solid #4f46e5; transform: scale(1.1); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        select.date-select {
+            appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+            background-repeat: no-repeat; background-position: right 1rem center; background-size: 1em;
+        }
+    </style>
+</head>
+<body class="pb-10">
+    <div class="max-w-6xl mx-auto p-4">
+        <header class="flex justify-between items-center mb-6 bg-slate-900 p-6 rounded-[2.5rem] text-white shadow-xl">
+            <div onclick="location.reload()" class="cursor-pointer">
+                <h1 class="text-xl font-black italic tracking-tighter text-indigo-400">BMT 2026 CLOUD <span class="text-white text-[10px] opacity-50 ml-1">v7.0</span></h1>
+                <p id="userStatus" class="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">正在連線至雲端...</p>
+            </div>
+            <div class="flex gap-2">
+                <button id="profileBtn" onclick="openMySettings()" class="hidden bg-emerald-600 px-4 py-2 rounded-full text-[10px] font-black hover:bg-emerald-700">個人設定</button>
+                <button id="adminBtn" onclick="openAdmin()" class="hidden bg-indigo-600 px-4 py-2 rounded-full text-[10px] font-black hover:bg-indigo-700">管理後台</button>
+                <button id="logoutBtn" onclick="logout()" class="hidden bg-slate-800 px-4 py-2 rounded-full text-[10px] font-black">登出</button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div class="lg:col-span-4 space-y-6">
+                <div class="glass p-6">
+                    <h2 class="font-black mb-4 text-slate-800 uppercase text-xs tracking-widest">🏸 球員登入</h2>
+                    <div id="playerGrid" class="grid grid-cols-3 gap-4"></div>
+                </div>
+                <div class="glass p-6">
+                    <h2 class="font-black mb-4 text-indigo-600 italic">🏆 勝率排行榜 (點擊分析)</h2>
+                    <div id="leaderboard" class="space-y-3"></div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-8 space-y-6">
+                <div id="lockUI" class="glass p-24 text-center border-4 border-dashed border-slate-200">
+                    <p class="text-slate-400 font-black text-xl italic tracking-widest uppercase">Please Login to Sync</p>
+                </div>
+
+                <div id="appUI" class="hidden space-y-6">
+                    <div class="glass p-8 shadow-xl border-t-[12px] border-indigo-600">
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+                            <div class="w-full sm:w-64">
+                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">選擇比賽日期</p>
+                                <select id="dateSelector" onchange="setDay(parseInt(this.value))" class="date-select w-full bg-indigo-50 text-indigo-600 font-black px-4 py-3 rounded-2xl text-sm border border-indigo-100 outline-none"></select>
+                            </div>
+                            <div id="dateDisplay" class="font-bold text-slate-600 text-sm"></div>
+                        </div>
+
+                        <div class="grid grid-cols-11 gap-3 items-center bg-slate-50 p-6 rounded-[2rem] mb-6 shadow-inner">
+                            <div class="col-span-4 space-y-3">
+                                <select id="p1" onchange="filterPlayers()" class="w-full p-2.5 rounded-xl border-none shadow-sm font-bold text-sm bg-white"></select>
+                                <select id="p2" onchange="filterPlayers()" class="w-full p-2.5 rounded-xl border-none shadow-sm font-bold text-sm bg-white"></select>
+                                <input type="number" id="s1" class="w-full p-4 rounded-2xl text-center text-4xl font-black text-indigo-600" placeholder="0">
+                            </div>
+                            <div class="col-span-3 text-center font-black text-slate-300 italic text-2xl">VS</div>
+                            <div class="col-span-4 space-y-3">
+                                <select id="p3" onchange="filterPlayers()" class="w-full p-2.5 rounded-xl border-none shadow-sm font-bold text-sm bg-white"></select>
+                                <select id="p4" onchange="filterPlayers()" class="w-full p-2.5 rounded-xl border-none shadow-sm font-bold text-sm bg-white"></select>
+                                <input type="number" id="s2" class="w-full p-4 rounded-2xl text-center text-4xl font-black text-rose-600" placeholder="0">
+                            </div>
+                        </div>
+                        <button id="recordBtn" onclick="addMatch()" class="w-full bg-indigo-600 text-white py-5 rounded-[1.5rem] font-black text-xl shadow-lg active:scale-95">同步戰果至雲端</button>
+                    </div>
+                </div>
+
+                <div class="glass p-6">
+                    <h3 id="historyTitle" class="text-xs font-black text-slate-400 mb-4 uppercase tracking-[0.2em]">該場賽事歷史</h3>
+                    <div id="matchHistory" class="space-y-3"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="analysisModal" class="modal" onclick="closeModal()">
+        <div class="bg-white p-8 rounded-[3rem] w-[22rem] shadow-2xl" onclick="event.stopPropagation()">
+            <div id="analysisContent"></div>
+            <button onclick="closeModal()" class="w-full mt-6 py-4 bg-slate-900 text-white rounded-2xl font-black">關閉報告</button>
+        </div>
+    </div>
+    <div id="loginModal" class="modal" onclick="if(event.target==this) closeModal()"><div class="bg-white p-10 rounded-[3rem] w-80 text-center shadow-2xl" onclick="event.stopPropagation()"><img id="loginImg" class="w-24 h-24 rounded-full mx-auto mb-4 border-4 border-indigo-50 shadow-lg object-cover bg-slate-100"><h3 id="loginName" class="font-black text-2xl mb-6"></h3><input type="password" id="pinInput" maxlength="6" inputmode="numeric" class="w-full p-4 bg-slate-50 rounded-2xl text-center text-3xl tracking-[0.4em] mb-6 outline-none" placeholder="******"><div class="flex gap-4"><button onclick="closeModal()" class="flex-1 text-slate-400 font-bold">取消</button><button onclick="login()" class="flex-1 py-3 bg-indigo-600 text-white rounded-2xl font-bold">登入</button></div></div></div>
+    <div id="mySettingsModal" class="modal" onclick="if(event.target==this) closeModal()"><div class="bg-white p-8 rounded-[3rem] w-[22rem] shadow-2xl" onclick="event.stopPropagation()"><h2 class="font-black text-2xl mb-6 text-emerald-600 italic">PROFILE</h2><div class="space-y-5"><div class="flex flex-col items-center gap-2" onclick="openAvatarLibrary('edit')"><img id="mySetAvatar" class="w-24 h-24 rounded-full border-4 border-emerald-50 cursor-pointer p-1 object-cover bg-slate-50"><p class="text-[10px] text-slate-400 font-bold uppercase">更換頭像</p></div><div><label class="text-xs font-black text-slate-400 uppercase">暱稱</label><input type="text" id="mySetName" class="w-full p-3 bg-slate-100 rounded-xl mt-1 font-bold outline-none border-none"></div><div class="grid grid-cols-2 gap-4"><div><label class="text-xs font-black text-slate-400 uppercase">性別</label><select id="mySetGender" class="w-full p-3 bg-slate-100 rounded-xl mt-1 font-bold border-none"><option value="male">男 ♂</option><option value="female">女 ♀</option></select></div><div><label class="text-xs font-black text-slate-400 uppercase">密碼</label><input type="password" id="mySetPin" maxlength="6" class="w-full p-3 bg-slate-100 rounded-xl mt-1 font-mono text-center outline-none border-none"></div></div><button onclick="saveMySettings()" class="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black shadow-lg">儲存並同步</button></div></div></div>
+    <div id="adminModal" class="modal" onclick="if(event.target==this) closeModal()"><div class="bg-white p-8 rounded-[2.5rem] w-[22rem] max-h-[85vh] flex flex-col" onclick="event.stopPropagation()"><h2 class="font-black text-2xl mb-6 border-b pb-4 italic text-slate-800 uppercase">Admin</h2><div class="overflow-y-auto no-scrollbar space-y-4"><div class="space-y-4 bg-slate-50 p-6 rounded-[2rem]"><div class="flex gap-2"><img id="addAvatarPrev" src="https://api.dicebear.com/7.x/adventurer/svg?seed=1" class="w-12 h-12 rounded-full cursor-pointer bg-white object-cover" onclick="openAvatarLibrary('add')"><input type="text" id="addName" class="flex-1 p-2 rounded-xl border-none shadow-sm font-bold text-sm" placeholder="姓名"></div><div class="flex gap-4 px-2 font-bold text-xs text-slate-500"><label class="flex-1"><input type="radio" name="gender" value="male" checked> 男</label><label class="flex-1"><input type="radio" name="gender" value="female"> 女</label></div><input type="text" id="addPin" maxlength="6" class="w-full p-2 border-none shadow-sm rounded-xl text-center" placeholder="6 位密碼"><button onclick="addUser()" class="w-full bg-indigo-600 text-white py-3 rounded-xl font-black shadow-md">新增隊員</button></div><div id="userList" class="space-y-2 mt-4"></div></div></div></div>
+    <div id="avatarModal" class="modal" onclick="if(event.target==this) closeModal()"><div class="bg-white p-8 rounded-[3rem] w-[24rem] shadow-2xl" onclick="event.stopPropagation()"><div class="grid grid-cols-4 gap-4 max-h-60 overflow-y-auto p-2 no-scrollbar" id="avatarGrid"></div></div></div>
+
+    <script>
+    const firebaseConfig = {
+        apiKey: "AIzaSyAu3vgGKm0pJL_HB2N8v1GI73GK9ppB6PQ",
+        authDomain: "badminton01-03.firebaseapp.com",
+        databaseURL: "https://badminton01-03-default-rtdb.firebaseio.com/",
+        projectId: "badminton01-03",
+        storageBucket: "badminton01-03.firebasestorage.app",
+        messagingSenderId: "28613577810",
+        appId: "1:28613577810:web:36f35050aa1d1de0b3a38b"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const rtdb = firebase.database();
+
+    const SEASON_DATES = generateSeasonDates();
+    let db = { users: [], matches: [], day: 1 };
+    let session = null, loginTarget = null, selectedAvatar = "https://api.dicebear.com/7.x/adventurer/svg?seed=1", avatarMode = '';
+
+    function generateSeasonDates() {
+        let dates = []; let date = new Date(2026, 0, 5);
+        while (dates.length < 12) {
+            let dateStr = date.toISOString().split('T')[0];
+            if (dateStr !== "2026-02-16") dates.push(`${date.getMonth() + 1}/${date.getDate()} (週一)`);
+            date.setDate(date.getDate() + 7);
+        }
+        return dates;
+    }
+
+    function init() {
+        rtdb.ref('/').on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                db = data;
+                if(!db.matches) db.matches = [];
+                if(!db.users) db.users = [];
+                renderPlayers();
+                renderDateSelector();
+                updateUI();
+                // 修正：更新使用者狀態顯示
+                updateUserStatus();
+            }
+        });
+    }
+
+    function updateUserStatus() {
+        const el = document.getElementById('userStatus');
+        if (session) {
+            el.innerText = `目前使用者：${session.name} 操作中`;
+            el.classList.remove('text-slate-400');
+            el.classList.add('text-emerald-400');
+        } else {
+            el.innerText = "請點擊頭像登入系統";
+            el.classList.add('text-slate-400');
+            el.classList.remove('text-emerald-400');
+        }
+    }
+
+    // 修正：下拉選單過濾重複球員
+    function filterPlayers() {
+        const ids = ['p1', 'p2', 'p3', 'p4'];
+        const currentSelections = ids.map(id => document.getElementById(id).value);
+        const players = db.users.filter(u => u.role !== 'admin');
+
+        ids.forEach((id, index) => {
+            const select = document.getElementById(id);
+            const savedValue = currentSelections[index];
+            
+            let options = `<option value="">-- 選擇球員 --</option>`;
+            players.forEach(u => {
+                // 如果這個球員已被其他選單選中，則不顯示在當前選單中 (除非是自己原本選的那個)
+                const isSelectedElsewhere = currentSelections.some((val, i) => i !== index && val === u.name);
+                if (!isSelectedElsewhere) {
+                    options += `<option value="${u.name}" ${savedValue === u.name ? 'selected' : ''}>${u.name}</option>`;
+                }
+            });
+            select.innerHTML = options;
+        });
+    }
+
+    function renderPlayers() {
+        const grid = document.getElementById('playerGrid');
+        grid.innerHTML = db.users.map(u => `
+            <div onclick="openLogin('${u.id}')" class="flex flex-col items-center cursor-pointer group">
+                <img src="${u.avatar}" class="w-16 h-16 rounded-full border-4 border-white shadow-md bg-white object-cover group-hover:scale-110 transition">
+                <span class="text-[11px] mt-2 font-black text-slate-500">${u.name}</span>
+            </div>
+        `).join('');
+        filterPlayers(); // 渲染後更新一次下拉選單內容
+    }
+
+    // 排行榜分析
+    function analyzePlayer(playerName) {
+        const myMatches = db.matches.filter(m => [...m.t1, ...m.t2].includes(playerName));
+        if (myMatches.length === 0) return alert('尚無比賽數據可供分析');
+        let partners = {}; let enemies = {};
+        myMatches.forEach(m => {
+            const isT1 = m.t1.includes(playerName);
+            const myTeam = isT1 ? m.t1 : m.t2;
+            const enemyTeam = isT1 ? m.t2 : m.t1;
+            const isWin = isT1 ? (m.s1 > m.s2) : (m.s2 > m.s1);
+            const partner = myTeam.find(p => p !== playerName);
+            if (partner) {
+                if (!partners[partner]) partners[partner] = { win: 0, total: 0 };
+                partners[partner].total++;
+                if (isWin) partners[partner].win++;
+            }
+            enemyTeam.forEach(e => {
+                if (!enemies[e]) enemies[e] = { win: 0, total: 0 };
+                enemies[e].total++;
+                if (!isWin) enemies[e].win++;
+            });
+        });
+        const bestPartner = Object.entries(partners).map(([name, stat]) => ({ name, rate: Math.round(stat.win/stat.total*100), total: stat.total })).sort((a,b) => b.rate - a.rate)[0];
+        const toughEnemy = Object.entries(enemies).map(([name, stat]) => ({ name, rate: Math.round(stat.win/stat.total*100), total: stat.total })).sort((a,b) => b.rate - a.rate)[0];
+        document.getElementById('analysisContent').innerHTML = `
+            <div class="text-center mb-6"><p class="text-[10px] font-black text-indigo-500 uppercase tracking-widest">Player Analysis</p><h3 class="text-2xl font-black text-slate-800">${playerName}</h3></div>
+            <div class="space-y-4">
+                <div class="bg-emerald-50 p-5 rounded-3xl border border-emerald-100"><p class="text-xs font-black text-emerald-600 mb-2">🤝 最強戰友</p>${bestPartner ? `<div class="flex justify-between items-end"><span class="text-lg font-bold">${bestPartner.name}</span><span class="text-2xl font-black text-emerald-600">${bestPartner.rate}% <small class="text-xs text-slate-400 font-normal">(${bestPartner.total}場)</small></span></div>` : '<p class="text-sm text-slate-400">數據不足</p>'}</div>
+                <div class="bg-rose-50 p-5 rounded-3xl border border-rose-100"><p class="text-xs font-black text-rose-600 mb-2">☠️ 頭號宿敵</p>${toughEnemy ? `<div class="flex justify-between items-end"><span class="text-lg font-bold">${toughEnemy.name}</span><span class="text-2xl font-black text-rose-600">${toughEnemy.rate}% <small class="text-xs text-slate-400 font-normal">(${toughEnemy.total}場)</small></span></div>` : '<p class="text-sm text-slate-400">數據不足</p>'}</div>
+            </div>`;
+        document.getElementById('analysisModal').classList.add('active');
+    }
+
+    function updateUI() {
+        const stats = db.users.filter(u => u.role !== 'admin').map(u => {
+            const m = db.matches ? db.matches.filter(m => [...m.t1, ...m.t2].includes(u.name)) : [];
+            const w = m.filter(m => { const isT1 = m.t1.includes(u.name); return isT1 ? (m.s1 > m.s2) : (m.s2 > m.s1); }).length;
+            return { name: u.name, rate: m.length ? Math.round(w/m.length*100) : 0, t: m.length, gender: u.gender };
+        }).sort((a,b) => b.rate - a.rate || b.t - a.t);
+        document.getElementById('leaderboard').innerHTML = stats.map((s, idx) => `
+            <div onclick="analyzePlayer('${s.name}')" class="flex justify-between items-center p-4 bg-white rounded-2xl shadow-sm border-l-[8px] ${s.gender==='male'?'border-blue-400':'border-pink-400'} cursor-pointer hover:bg-slate-50 transition">
+                <span class="font-black text-sm">${idx+1}. ${s.name} <small class="text-slate-400">(${s.t}場)</small></span><span class="font-black text-indigo-600">${s.rate}%</span>
+            </div>`).join('') || '<p class="text-xs text-center py-4 text-slate-300">目前尚無球員統計</p>';
+        const history = db.matches ? db.matches.filter(m => m.day === db.day).reverse() : [];
+        document.getElementById('matchHistory').innerHTML = history.map(m => `
+            <div class="flex justify-between items-center p-4 bg-white rounded-2xl border border-slate-50 shadow-sm">
+                <span class="font-bold text-slate-700 text-sm">${m.t1[0]}/${m.t1[1]} <span class="text-indigo-600 px-2 font-black">${m.s1}:${m.s2}</span> ${m.t2[0]}/${m.t2[1]}</span>
+                ${(session && session.role === 'admin') ? `<button onclick="delMatch(${m.id})" class="text-rose-400 font-black text-xs bg-rose-50 px-3 py-1 rounded-full">刪除</button>` : ''}
+            </div>`).join('') || '<p class="text-center text-slate-400 text-xs py-10">尚無雲端紀錄</p>';
+    }
+
+    function openMySettings() {
+        if(!session) return;
+        document.getElementById('mySetAvatar').src = session.avatar;
+        document.getElementById('mySetName').value = session.name;
+        document.getElementById('mySetGender').value = session.gender || 'male';
+        document.getElementById('mySetPin').value = session.pin;
+        document.getElementById('mySettingsModal').classList.add('active');
+    }
+
+    function saveMySettings() {
+        const uIdx = db.users.findIndex(u => u.id === session.id);
+        const newName = document.getElementById('mySetName').value.trim();
+        const newPin = document.getElementById('mySetPin').value;
+        if(!newName || newPin.length !== 6) return alert('暱稱必填且密碼須為6位');
+        db.users[uIdx].name = newName; db.users[uIdx].pin = newPin;
+        db.users[uIdx].gender = document.getElementById('mySetGender').value;
+        db.users[uIdx].avatar = document.getElementById('mySetAvatar').src;
+        rtdb.ref('users').set(db.users).then(() => { alert('同步成功！'); session = db.users[uIdx]; closeModal(); updateUserStatus(); });
+    }
+
+    function openLogin(uid) {
+        loginTarget = db.users.find(u => u.id === uid);
+        document.getElementById('loginImg').src = loginTarget.avatar;
+        document.getElementById('loginName').innerText = loginTarget.name;
+        document.getElementById('pinInput').value = '';
+        document.getElementById('loginModal').classList.add('active');
+    }
+    function login() {
+        if(document.getElementById('pinInput').value === loginTarget.pin) {
+            session = loginTarget;
+            document.getElementById('lockUI').classList.add('hidden');
+            document.getElementById('appUI').classList.remove('hidden');
+            document.getElementById('logoutBtn').classList.remove('hidden');
+            document.getElementById('profileBtn').classList.remove('hidden');
+            if(session.role === 'admin') document.getElementById('adminBtn').classList.remove('hidden');
+            closeModal(); updateUI(); updateUserStatus();
+        } else { alert('密碼錯誤'); }
+    }
+    function logout() { session = null; location.reload(); }
+    function closeModal() { document.querySelectorAll('.modal').forEach(m => m.classList.remove('active')); }
+    function renderDateSelector() {
+        const selector = document.getElementById('dateSelector');
+        selector.innerHTML = SEASON_DATES.map((d, i) => `<option value="${i+1}" ${db.day === (i+1) ? 'selected' : ''}>第 ${i+1} 場：${d}</option>`).join('');
+        document.getElementById('dateDisplay').innerText = `📅 ${SEASON_DATES[db.day-1]}`;
+    }
+    function openAdmin() {
+        const list = document.getElementById('userList');
+        list.innerHTML = db.users.map(u => `
+            <div class="flex justify-between items-center p-3 bg-white rounded-xl shadow-sm border border-slate-100">
+                <div class="flex items-center gap-2"><img src="${u.avatar}" class="w-8 h-8 rounded-full"><div><p class="text-xs font-black">${u.name}</p><p class="text-[9px] text-indigo-500 font-bold">PIN: ${u.pin}</p></div></div>
+                ${u.role !== 'admin' ? `<button onclick="delUser('${u.id}')" class="text-rose-500 font-black text-[10px]">刪除</button>` : ''}
+            </div>`).join('');
+        document.getElementById('adminModal').classList.add('active');
+    }
+    function openAvatarLibrary(mode) {
+        avatarMode = mode;
+        const grid = document.getElementById('avatarGrid');
+        const styles = ['adventurer', 'fun-emoji', 'bottts'];
+        grid.innerHTML = Array.from({length: 12}).map((_, i) => {
+            const url = `https://api.dicebear.com/7.x/${styles[i%3]}/svg?seed=${i + Date.now()}`;
+            return `<img src="${url}" class="avatar-pick" onclick="selectAvatar('${url}')">`;
+        }).join('');
+        document.getElementById('avatarModal').classList.add('active');
+    }
+    function selectAvatar(url) {
+        if(avatarMode === 'add') { document.getElementById('addAvatarPrev').src = url; selectedAvatar = url; }
+        else { document.getElementById('mySetAvatar').src = url; }
+        document.getElementById('avatarModal').classList.remove('active');
+    }
+    function addUser() {
+        const name = document.getElementById('addName').value.trim();
+        const pin = document.getElementById('addPin').value;
+        if(name && pin.length === 6) {
+            db.users.push({ id: 'u-'+Date.now(), name, pin, gender: document.querySelector('input[name="gender"]:checked').value, role:'user', avatar: selectedAvatar });
+            rtdb.ref('users').set(db.users); openAdmin();
+        }
+    }
+    function delUser(id) { if(confirm('確定刪除？')) { db.users = db.users.filter(u => u.id !== id); rtdb.ref('users').set(db.users); openAdmin(); } }
+    function addMatch() {
+        const p1 = document.getElementById('p1').value, p2 = document.getElementById('p2').value, p3 = document.getElementById('p3').value, p4 = document.getElementById('p4').value;
+        const s1 = parseInt(document.getElementById('s1').value), s2 = parseInt(document.getElementById('s2').value);
+        if(!p1 || !p2 || !p3 || !p4) return alert('請選齊四位球員');
+        if(isNaN(s1) || isNaN(s2)) return alert('請輸入分數');
+        db.matches.push({ id: Date.now(), day: db.day, t1: [p1, p2], t2: [p3, p4], s1, s2 });
+        rtdb.ref('matches').set(db.matches);
+        // 重設輸入
+        document.getElementById('s1').value = ''; document.getElementById('s2').value = '';
+        filterPlayers(); 
+    }
+    function delMatch(id) { if(confirm('確定刪除？')) { db.matches = db.matches.filter(m => m.id !== id); rtdb.ref('matches').set(db.matches); } }
+    function setDay(d) { rtdb.ref('day').set(d); }
+    window.onload = init;
+    </script>
+</body>
+</html>
